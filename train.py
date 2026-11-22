@@ -18,8 +18,7 @@ from matplotlib import pyplot as plt
 from matplotlib.ticker import MaxNLocator, PercentFormatter
 
 
-def split_data(seed):
-    x, y = load_digits(return_X_y=True)
+def split_indices(y, seed):
     train_val, test = train_test_split(
         np.arange(len(y)), test_size=0.20, stratify=y, random_state=seed
     )
@@ -31,6 +30,12 @@ def split_data(seed):
         rng.choice(train[y[train] == digit], 5, replace=False) for digit in range(10)
     ])
     pool = np.setdiff1d(train, labeled)
+    return labeled, pool, val, test
+
+
+def split_data(seed):
+    x, y = load_digits(return_X_y=True)
+    labeled, pool, val, test = split_indices(y, seed)
     return (x[labeled], y[labeled]), x[pool], (x[val], y[val]), (x[test], y[test])
 
 
@@ -50,17 +55,21 @@ def fit(x, y):
     return LogisticRegression(C=0.1, max_iter=2000).fit(x, y)
 
 
-def self_train(labeled, pool, validation, threshold, target, max_rounds):
+def self_train(labeled, pool, validation, threshold, target, max_rounds, *,
+               frozen_teacher=False, selection_log=None, verbose=True):
     x, y = labeled
     baseline = best = current = fit(x, y)
     best_round = 0
     added = 0
     history = []
+    if selection_log is not None:
+        pool_ids = np.arange(len(pool))
     for step in range(max_rounds + 1):
         score = float(current.score(*validation))
         history.append(dict(round=step, added=added, training_size=len(y),
                             pool_size=len(pool), val_accuracy=score))
-        print(f"Round {step:2}: added={added:2}, train={len(y):3}, val={score:.2%}")
+        if verbose:
+            print(f"Round {step:2}: added={added:2}, train={len(y):3}, val={score:.2%}")
         if score > history[best_round]["val_accuracy"]:
             best, best_round = current, step
         if score >= target:
@@ -72,11 +81,18 @@ def self_train(labeled, pool, validation, threshold, target, max_rounds):
         if not len(pool):
             reason = "empty_pool"
             break
-        rows, predictions = select_examples(current.predict_proba(pool),
-                                             current.classes_, threshold)
+        teacher = baseline if frozen_teacher else current
+        probabilities = teacher.predict_proba(pool)
+        rows, predictions = select_examples(probabilities, teacher.classes_, threshold)
         if not len(rows):
             reason = "no_candidates"
             break
+        if selection_log is not None:
+            for row, prediction in zip(rows, predictions):
+                selection_log.append(dict(round=step + 1, pool_id=int(pool_ids[row]),
+                                          prediction=int(prediction),
+                                          confidence=float(probabilities[row].max())))
+            pool_ids = np.delete(pool_ids, rows)
         x = np.concatenate([x, pool[rows]])
         y = np.concatenate([y, predictions])
         pool = np.delete(pool, rows, axis=0)
