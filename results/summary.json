@@ -1,0 +1,18 @@
+{
+  "seed": 42,
+  "threshold": 0.9,
+  "target": 0.9,
+  "max_rounds": 10,
+  "split_sizes": {
+    "labeled": 50,
+    "unlabeled": 1117,
+    "validation": 270,
+    "test": 360
+  },
+  "stop_reason": "target_reached",
+  "best_round": 10,
+  "baseline_val_accuracy": 0.8407407407407408,
+  "best_val_accuracy": 0.9037037037037037,
+  "baseline_test_accuracy": 0.85,
+  "best_test_accuracy": 0.8638888888888889
+}
